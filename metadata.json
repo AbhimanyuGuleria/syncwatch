@@ -1,0 +1,6 @@
+{
+  "name": "SyncWatch",
+  "description": "Real-time synchronized movie watch party platform with live chat, room controls, floating reactions, voice/video call, and AI movie assistant.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
