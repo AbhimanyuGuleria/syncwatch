@@ -45,6 +45,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
 
   const [activeReactions, setActiveReactions] = useState<ReactionEvent[]>([]);
+  const [autoplayBlocked, setAutoplayBlocked] = useState<boolean>(false);
+  const autoplayBlockedRef = useRef<boolean>(false);
+
+  const setAutoplayBlockedState = (val: boolean) => {
+    setAutoplayBlocked(val);
+    autoplayBlockedRef.current = val;
+  };
 
   // Show/Hide Controls Auto Timer
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -97,7 +104,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (playbackState.status === 'playing') {
         setIsPlaying(true);
         if (video.paused) {
-          video.play().catch(e => console.log('Autoplay prevented:', e));
+          video.play().catch(e => {
+            console.log('Autoplay prevented:', e);
+            setAutoplayBlockedState(true);
+          });
+        }
+
+        if (autoplayBlockedRef.current) {
+          setSyncStatus('catching_up');
+          return;
         }
 
         const drift = video.currentTime - expectedTimeSec;
@@ -137,6 +152,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       onPause(currentMs);
     } else {
       onPlay(currentMs);
+    }
+  };
+
+  const handleBypassAutoplay = () => {
+    setAutoplayBlockedState(false);
+    const video = videoRef.current;
+    if (video) {
+      video.play().catch(err => {
+        // Fallback: play muted
+        video.muted = true;
+        setIsMuted(true);
+        video.play().catch(e => console.log('Muted autoplay fallback failed:', e));
+      });
     }
   };
 
@@ -323,6 +351,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <Play className="h-8 w-8 fill-white ml-1" />
             )}
           </button>
+        </div>
+      )}
+
+      {autoplayBlocked && (
+        <div 
+          onClick={handleBypassAutoplay}
+          className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-zinc-950/85 backdrop-blur-md cursor-pointer transition-all duration-300"
+        >
+          <div className="flex flex-col items-center max-w-sm text-center p-6 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/20 text-rose-400 mb-4 animate-pulse">
+              <VolumeX className="h-8 w-8" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Tap to Join Party</h3>
+            <p className="text-xs text-zinc-400 mb-6 px-2">
+              Your browser blocks auto-playing media. Tap below to sync up with the stream and enable audio!
+            </p>
+            <button 
+              onClick={handleBypassAutoplay}
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-sm font-semibold rounded-xl transition-all shadow-lg shadow-rose-600/30 cursor-pointer"
+            >
+              Sync & Unmute
+            </button>
+          </div>
         </div>
       )}
 
