@@ -46,6 +46,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedLocalFile, setSelectedLocalFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [localVideoDuration, setLocalVideoDuration] = useState<number>(7200);
 
   if (!isOpen) return null;
@@ -96,6 +97,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
     if (sourceType === 'local' && selectedLocalFile) {
       setIsUploading(true);
+      setUploadProgress(0);
       const localBlobUrl = URL.createObjectURL(selectedLocalFile);
 
       try {
@@ -107,6 +109,13 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
         const uploadData: any = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', '/api/upload-local-movie');
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setUploadProgress(percent);
+            }
+          };
 
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
@@ -389,6 +398,25 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
             />
           </div>
 
+          {/* Upload Progress */}
+          {isUploading && (
+            <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/80 p-4">
+              <div className="flex items-center justify-between text-xs font-semibold text-zinc-300">
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-rose-400" />
+                  Uploading file to server for remote streaming...
+                </span>
+                <span className="text-rose-400 font-mono">{uploadProgress}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className="h-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Submit */}
           <div className="flex items-center justify-end gap-3 pt-3">
             <button
@@ -401,13 +429,13 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isUploading || (sourceType === 'local' && !selectedLocalFile)}
+              disabled={isUploading || (sourceType === 'local' && !selectedLocalFile) || (sourceType === 'url' && !customVideoUrl.trim())}
               className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-rose-600/30 hover:from-rose-500 hover:to-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isUploading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Hosting Movie...</span>
+                  <span>Hosting Movie ({uploadProgress}%)</span>
                 </>
               ) : (
                 <span>Launch Watch Party 🎉</span>
