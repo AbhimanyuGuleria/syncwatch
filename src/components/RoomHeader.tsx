@@ -66,43 +66,44 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
 
       {/* Right Actions */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Highlighted Share Invite Link */}
+        <button
+          onClick={handleCopyLink}
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-rose-600/30 hover:from-rose-500 hover:to-red-500 transition-all active:scale-95"
+          title="Copy party invite link to send to your friend"
+        >
+          {copiedLink ? (
+            <>
+              <Check className="h-4 w-4 text-emerald-300" />
+              <span>Link Copied! Send to Friend 🚀</span>
+            </>
+          ) : (
+            <>
+              <Share2 className="h-4 w-4 text-white" />
+              <span>Invite Friend (Copy Link) 🔗</span>
+            </>
+          )}
+        </button>
+
         {/* Copy Invite Code */}
         <button
           onClick={handleCopyCode}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs font-mono font-semibold text-rose-400 hover:border-zinc-700 transition-colors"
+          className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs font-mono font-bold text-rose-400 hover:border-zinc-700 transition-colors"
           title="Room Invite Code"
         >
           {copiedCode ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
           <span>CODE: {room.code}</span>
         </button>
 
-        {/* Share Invite Link */}
-        <button
-          onClick={handleCopyLink}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-800/80 px-3.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 hover:text-white transition-colors"
-        >
-          {copiedLink ? (
-            <>
-              <Check className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Link Copied!</span>
-            </>
-          ) : (
-            <>
-              <Share2 className="h-3.5 w-3.5 text-zinc-400" />
-              <span>Invite Friends</span>
-            </>
-          )}
-        </button>
-
         {/* Host Local Movie Button */}
         {onOpenLocalHostModal && (
           <button
             onClick={onOpenLocalHostModal}
-            className="flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-gradient-to-r from-rose-600/30 to-red-600/30 px-3.5 py-1.5 text-xs font-bold text-rose-300 hover:border-rose-500 hover:bg-rose-600/40 transition-colors shadow-sm"
-            title="Host a downloaded video file from your computer"
+            className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+            title="Host a video file or direct video URL"
           >
             <HardDrive className="h-3.5 w-3.5 text-rose-400" />
-            <span>Host Local Movie</span>
+            <span>Change Movie / Stream</span>
           </button>
         )}
 
@@ -110,7 +111,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
         {isHost && (
           <button
             onClick={onToggleMemberControl}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
               room.allowMemberControl
                 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
                 : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
@@ -125,7 +126,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
         {/* Leave Room */}
         <button
           onClick={onLeaveRoom}
-          className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3.5 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
+          className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs font-semibold text-zinc-400 hover:border-rose-500/40 hover:text-rose-400 transition-colors"
         >
           <LogOut className="h-3.5 w-3.5" />
           <span>Leave Room</span>

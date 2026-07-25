@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { 
   Play, Pause, Volume2, VolumeX, Maximize2, Minimize2, 
   RotateCcw, RotateCw, SkipForward, Settings, Captions,
-  Radio, AlertCircle, Sparkles, PictureInPicture
+  Radio, AlertCircle, Sparkles, PictureInPicture, Monitor, Tv, Link
 } from 'lucide-react';
 import { PlaybackState, ReactionEvent, Subtitle } from '../types';
 
@@ -16,6 +16,10 @@ interface VideoPlayerProps {
   onNextMedia?: () => void;
   reactionEvents: ReactionEvent[];
   subtitles?: Subtitle[];
+  screenShareStream?: MediaStream | null;
+  isScreenSharing?: boolean;
+  onToggleScreenShare?: () => void;
+  onOpenLocalHostModal?: () => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -28,9 +32,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onNextMedia,
   reactionEvents,
   subtitles = [],
+  screenShareStream = null,
+  isScreenSharing = false,
+  onToggleScreenShare,
+  onOpenLocalHostModal,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Bind WebRTC Screen Share Stream
+  useEffect(() => {
+    if (videoRef.current) {
+      if (screenShareStream) {
+        videoRef.current.srcObject = screenShareStream;
+        videoRef.current.play().catch(e => console.log('Screen share playback autoplay:', e));
+      } else {
+        videoRef.current.srcObject = null;
+      }
+    }
+  }, [screenShareStream]);
 
   const [isPlaying, setIsPlaying] = useState<boolean>(playbackState.status === 'playing');
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -41,9 +61,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [showControls, setShowControls] = useState<boolean>(true);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'catching_up' | 'paused'>('synced');
   const [selectedSubtitle, setSelectedSubtitle] = useState<string>('none');
-  const [selectedQuality, setSelectedQuality] = useState<string>('Auto');
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
-
   const [activeReactions, setActiveReactions] = useState<ReactionEvent[]>([]);
   const [autoplayBlocked, setAutoplayBlocked] = useState<boolean>(false);
   const autoplayBlockedRef = useRef<boolean>(false);
@@ -53,6 +71,38 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     autoplayBlockedRef.current = val;
   };
 
+  const [mediaError, setMediaError] = useState<{ isError: boolean; type?: 'blob' | 'network' | 'format'; message?: string } | null>(null);
+
+  // Check and reset media error on stream URL change
+  useEffect(() => {
+    if (playbackState.mediaStreamUrl?.startsWith('blob:') && !isHost) {
+      setMediaError({
+        isError: true,
+        type: 'blob',
+        message: 'This stream is hosted via a local browser Blob URL on the host machine. Local blob URLs cannot be accessed over the network by remote friends.'
+      });
+    } else {
+      setMediaError(null);
+    }
+  }, [playbackState.mediaStreamUrl, isHost]);
+
+  const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    console.warn('Video element error event:', e);
+    const src = playbackState.mediaStreamUrl || '';
+    if (src.startsWith('blob:') && !isHost) {
+      setMediaError({
+        isError: true,
+        type: 'blob',
+        message: 'Local host blob URL cannot be loaded on your computer. Ask the host to select a catalog movie or paste a direct video URL.'
+      });
+    } else {
+      setMediaError({
+        isError: true,
+        type: 'network',
+        message: `Unable to load video stream (${src || 'No URL'}). The tunnel or video host server may be offline or unreachable.`
+      });
+    }
+  };
   // Show/Hide Controls Auto Timer
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const handleMouseMove = () => {
@@ -260,11 +310,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         ref={videoRef}
         src={playbackState.mediaStreamUrl}
         poster={playbackState.mediaPosterUrl}
+        onError={handleVideoError}
         onTimeUpdate={() => {
           if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
         }}
         onLoadedMetadata={() => {
-          if (videoRef.current) setDuration(videoRef.current.duration);
+          if (videoRef.current) {
+            setDuration(videoRef.current.duration);
+            setMediaError(null);
+          }
         }}
         onClick={togglePlayPause}
         className="h-full w-full object-contain cursor-pointer"
@@ -281,6 +335,55 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           />
         ))}
       </video>
+
+      {/* Stream Error Diagnostic Overlay */}
+      {mediaError?.isError && (
+        <div className="absolute inset-0 z-45 flex flex-col items-center justify-center bg-zinc-950/95 backdrop-blur-md p-6 text-center animate-fade-in">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 mb-4 border border-amber-500/30">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1">
+            {mediaError.type === 'blob' ? 'Local Stream Inaccessible to Remote Viewers' : 'Video Stream Offline / Tunnel Down'}
+          </h3>
+          <p className="text-xs text-zinc-300 max-w-md mb-4 leading-relaxed">
+            {mediaError.message}
+          </p>
+          <div className="rounded-xl bg-zinc-900 border border-zinc-800 p-3 max-w-md text-left text-xs text-zinc-400 mb-5 space-y-1.5">
+            <p className="font-semibold text-rose-400">💡 How to fix this issue:</p>
+            {mediaError.type === 'blob' ? (
+              <>
+                <p>• <strong>Host:</strong> Upload the video file through the server upload option so it generates a server stream URL instead of a local blob URL.</p>
+                <p>• <strong>Host & Friends:</strong> Select a pre-seeded movie from the catalog or paste a public Direct MP4/WebM URL.</p>
+              </>
+            ) : (
+              <>
+                <p>• <strong>Tunnel Check:</strong> If accessing via Localtunnel/Ngrok, check your terminal to ensure the tunnel is still active.</p>
+                <p>• <strong>Direct URL:</strong> Switch to a public video stream link (e.g. Sintel catalog movie or direct MP4 link).</p>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (videoRef.current) {
+                  videoRef.current.load();
+                }
+              }}
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold rounded-xl border border-zinc-700 transition-all"
+            >
+              Retry Loading
+            </button>
+            {onOpenLocalHostModal && (
+              <button
+                onClick={onOpenLocalHostModal}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-rose-600/30 transition-all"
+              >
+                Change Movie Stream 🎬
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Floating Emoji Reactions Overlay */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
@@ -327,11 +430,37 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         )}
       </div>
 
-      {/* Movie Title Banner (Top Right) */}
-      <div className="absolute top-4 right-4 z-30 hidden sm:block">
-        <div className="rounded-xl bg-zinc-950/80 border border-zinc-800/80 px-3.5 py-1.5 backdrop-blur-md text-right">
+      {/* Movie Title Banner & Stream Controls (Top Right) */}
+      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+        {isHost && onToggleScreenShare && (
+          <button
+            onClick={onToggleScreenShare}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-all backdrop-blur-md shadow-lg ${
+              isScreenSharing
+                ? 'border-red-500 bg-red-600 text-white animate-pulse'
+                : 'border-indigo-500/40 bg-indigo-600/30 text-indigo-200 hover:bg-indigo-600/50'
+            }`}
+            title="Share your desktop video player or browser tab in real-time"
+          >
+            <Monitor className="h-4 w-4" />
+            <span>{isScreenSharing ? 'Stop Screen Stream' : '📺 Share Screen / Window'}</span>
+          </button>
+        )}
+
+        {isHost && onOpenLocalHostModal && (
+          <button
+            onClick={onOpenLocalHostModal}
+            className="flex items-center gap-1.5 rounded-xl border border-rose-500/40 bg-zinc-950/80 px-3 py-1.5 text-xs font-bold text-rose-400 hover:bg-rose-600 hover:text-white transition-all backdrop-blur-md shadow-lg"
+            title="Host local movie or paste online video URL"
+          >
+            <Link className="h-4 w-4" />
+            <span className="hidden md:inline">Change Stream / URL</span>
+          </button>
+        )}
+
+        <div className="rounded-xl bg-zinc-950/80 border border-zinc-800/80 px-3.5 py-1.5 backdrop-blur-md text-right hidden sm:block">
           <p className="text-xs font-semibold text-white truncate max-w-[220px]">
-            {playbackState.mediaTitle}
+            {isScreenSharing ? '🔴 LIVE Screen Share' : playbackState.mediaTitle}
           </p>
           <p className="text-[10px] text-zinc-400">SyncWatch Room Stream</p>
         </div>

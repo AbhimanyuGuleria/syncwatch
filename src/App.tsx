@@ -44,6 +44,10 @@ export default function App() {
   const [isLocalHostModalOpen, setIsLocalHostModalOpen] = useState(false);
   const [selectedMovieForModal, setSelectedMovieForModal] = useState<Movie | undefined>(undefined);
 
+  // Screen Share WebRTC State
+  const [screenShareStream, setScreenShareStream] = useState<MediaStream | null>(null);
+  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+
   // Initialize socket listeners
   useEffect(() => {
     const socket = getSocket();
@@ -98,11 +102,41 @@ export default function App() {
       setMembers(updatedMembers);
     });
 
-    // Check URL query parameters for auto-join
-    const params = new URLSearchParams(window.location.search);
-    const urlRoomId = params.get('room');
-    if (urlRoomId) {
-      joinRoom(urlRoomId);
+    socket.on('screen-share:started', () => {
+      console.log('Host started live screen share');
+    });
+
+    socket.on('screen-share:stopped', () => {
+      setScreenShareStream(null);
+      setIsScreenSharing(false);
+    });
+
+    socket.on('room:error', ({ message }) => {
+      console.warn('Room error:', message);
+      alert(`Unable to join room: ${message || 'Room not found'}. Redirecting to Global Lounge...`);
+      joinRoom('cinema-lounge');
+    });
+
+    // Handle initial URL room join after socket connection
+    const tryUrlJoin = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlRoomId = params.get('room');
+      if (urlRoomId) {
+        socket.emit('room:join', {
+          roomId: urlRoomId,
+          user: {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar
+          }
+        });
+      }
+    };
+
+    if (socket.connected) {
+      tryUrlJoin();
+    } else {
+      socket.once('connect', tryUrlJoin);
     }
 
     return () => {
@@ -114,6 +148,9 @@ export default function App() {
       socket.off('reaction:received');
       socket.off('queue:updated');
       socket.off('room:members-updated');
+      socket.off('screen-share:started');
+      socket.off('screen-share:stopped');
+      socket.off('room:error');
     };
   }, [currentUser]);
 
@@ -166,18 +203,16 @@ export default function App() {
   // Join by Code
   const handleJoinByCode = async (code: string) => {
     try {
-      const res = await fetch('/api/rooms');
-      const publicRooms: WatchRoom[] = await res.json();
-      const match = publicRooms.find(r => r.code.toUpperCase() === code.toUpperCase());
-
-      if (match) {
-        joinRoom(match.id);
+      const res = await fetch(`/api/rooms/code/${encodeURIComponent(code)}`);
+      if (res.ok) {
+        const room: WatchRoom = await res.json();
+        joinRoom(room.id);
       } else {
-        alert(`Room with code "${code}" not found. Trying default lounge...`);
-        joinRoom('cinema-lounge');
+        alert(`Room with code "${code}" not found. Please check the code and try again.`);
       }
     } catch (err) {
       console.error('Failed to join by code:', err);
+      alert('Network error while searching for room code.');
     }
   };
 
@@ -255,6 +290,42 @@ export default function App() {
     setActiveTab('browse');
   };
 
+  const handleToggleScreenShare = async () => {
+    if (isScreenSharing && screenShareStream) {
+      screenShareStream.getTracks().forEach(track => track.stop());
+      setScreenShareStream(null);
+      setIsScreenSharing(false);
+      if (currentRoom) {
+        getSocket().emit('screen-share:stopped', { roomId: currentRoom.id });
+      }
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true
+      });
+
+      setScreenShareStream(stream);
+      setIsScreenSharing(true);
+
+      if (currentRoom) {
+        getSocket().emit('screen-share:started', { roomId: currentRoom.id });
+      }
+
+      stream.getVideoTracks()[0].onended = () => {
+        setScreenShareStream(null);
+        setIsScreenSharing(false);
+        if (currentRoom) {
+          getSocket().emit('screen-share:stopped', { roomId: currentRoom.id });
+        }
+      };
+    } catch (err) {
+      console.warn('Screen share cancelled or failed:', err);
+    }
+  };
+
   const isHost = userRole === 'host' || (currentRoom ? currentRoom.hostId === currentUser.id : false);
 
   return (
@@ -308,6 +379,10 @@ export default function App() {
                   onNextMedia={queue.length > 0 ? handleNextMedia : undefined}
                   reactionEvents={reactionEvents}
                   subtitles={MOVIES.find(m => m.id === currentRoom.playbackState.mediaId)?.subtitles}
+                  screenShareStream={screenShareStream}
+                  isScreenSharing={isScreenSharing}
+                  onToggleScreenShare={handleToggleScreenShare}
+                  onOpenLocalHostModal={() => setIsLocalHostModalOpen(true)}
                 />
 
                 {/* Now Playing Media Details Bar */}
@@ -401,6 +476,7 @@ export default function App() {
       <LocalMovieHostModal
         isOpen={isLocalHostModalOpen}
         onClose={() => setIsLocalHostModalOpen(false)}
+        onSelectScreenShare={handleToggleScreenShare}
         onSelectLocalMovie={(movieData) => {
           if (currentRoom) {
             getSocket().emit('playback:media-change', {

@@ -268,6 +268,19 @@ async function startServer() {
     });
   });
 
+  app.get('/api/rooms/code/:code', (req, res) => {
+    const targetCode = req.params.code.toUpperCase();
+    const room = Array.from(rooms.values()).find(r => r.code.toUpperCase() === targetCode);
+    if (!room) {
+      return res.status(404).json({ error: `No active watch room found with code "${req.params.code}"` });
+    }
+    res.json({
+      ...room,
+      playbackState: getAuthoritativeState(room),
+      activeViewerCount: room.members.length
+    });
+  });
+
   app.post('/api/rooms', (req, res) => {
     const { title, hostId, hostName, hostAvatar, privacy, mediaId, allowMemberControl, customMedia } = req.body;
     let movie = MOVIES.find(m => m.id === mediaId);
@@ -337,8 +350,21 @@ async function startServer() {
       const apiKey = process.env.GEMINI_API_KEY;
 
       if (!apiKey) {
+        // Provide rich pre-seeded trivia answers depending on the movie title
+        let movieTrivia = "This movie features stunning cinematography and synchronized playback for all your friends!";
+        const titleLower = (movieTitle || '').toLowerCase();
+        if (titleLower.includes('sintel')) {
+          movieTrivia = "Did you know? **Sintel** was created by the Blender Foundation as an open-source movie project to test and showcase the capabilities of Blender 3D! It was funded by Blender community donations.";
+        } else if (titleLower.includes('bunny') || titleLower.includes('big buck')) {
+          movieTrivia = "Fun Fact: **Big Buck Bunny** was the Blender Foundation's second open movie project. The creators designed the forest creatures to represent cartoon archetypes, capturing a classic slapstick comedy style.";
+        } else if (titleLower.includes('tears of steel')) {
+          movieTrivia = "CineBot Fact: **Tears of Steel** was shot on 35mm film in Amsterdam! It blends live-action footage with open-source CGI to demonstrate photorealistic visual effects rendering.";
+        } else if (titleLower.includes('elephant')) {
+          movieTrivia = "**Elephant's Dream** was the world's first open-movie computer-animated film! Originally codenamed Project Orange, it showcases experimental surrealism.";
+        }
+
         return res.json({
-          reply: `🍿 **CineBot Insight**: You are watching **${movieTitle || 'a movie'}**! (Note: Configure GEMINI_API_KEY in secrets to activate full Gemini AI responses). Here is a quick fact: This movie features stunning cinematography and synchronized playback for all your friends!`
+          reply: `🍿 **CineBot Trivia**: You are watching **${movieTitle || 'a movie'}**! ${movieTrivia} Ask me anything else, or enjoy the synchronized stream with your friends!`
         });
       }
 
@@ -634,6 +660,28 @@ Format your response using clear markdown with emojis where appropriate. Keep an
 
       room.queue = room.queue.filter(i => i.id !== queueItemId);
       io.to(roomId).emit('queue:updated', room.queue);
+    });
+
+    // WebRTC Screen Share & P2P Video Signaling
+    socket.on('webrtc:signal', ({ targetSocketId, signalData, type }: { targetSocketId: string; signalData: any; type: string }) => {
+      io.to(targetSocketId).emit('webrtc:signal', {
+        senderSocketId: socket.id,
+        signalData,
+        type
+      });
+    });
+
+    socket.on('screen-share:started', ({ roomId }: { roomId: string }) => {
+      socket.to(roomId).emit('screen-share:started', { hostSocketId: socket.id });
+      const room = rooms.get(roomId);
+      if (room) {
+        room.playbackState.mediaTitle = "🔴 LIVE Screen Share Stream";
+        io.to(roomId).emit('playback:sync-state', getAuthoritativeState(room));
+      }
+    });
+
+    socket.on('screen-share:stopped', ({ roomId }: { roomId: string }) => {
+      socket.to(roomId).emit('screen-share:stopped', { hostSocketId: socket.id });
     });
 
     // WebRTC & Participant Media Toggles
